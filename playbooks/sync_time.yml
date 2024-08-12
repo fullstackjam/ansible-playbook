@@ -1,0 +1,47 @@
+---
+- name: Install and configure NTP on Ubuntu 24.04
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Ensure systemd-timesyncd is not present (to avoid conflicts)
+      apt:
+        name: systemd-timesyncd
+        state: absent
+
+    - name: Install NTP package
+      apt:
+        name: ntp
+        state: present
+
+    - name: Ensure NTP service is enabled and running
+      systemd:
+        name: ntp
+        enabled: true
+        state: started
+
+    - name: Configure NTP server (optional)
+      copy:
+        dest: /etc/ntp.conf
+        content: |
+          # Use public servers from the pool.ntp.org project.
+          # Please consider joining the pool (http://www.pool.ntp.org/join.html).
+          pool ntp.ubuntu.com iburst
+          restrict -4 default kod notrap nomodify nopeer noquery limited
+          restrict -6 default kod notrap nomodify nopeer noquery limited
+          restrict 127.0.0.1
+          restrict ::1
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Restart NTP service
+
+  handlers:
+    - name: Restart NTP service
+      systemd:
+        name: ntp
+        state: restarted

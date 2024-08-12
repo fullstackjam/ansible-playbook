@@ -1,0 +1,140 @@
+---
+- name: Update APT sources.list to Tsinghua University mirror
+  hosts: all
+  become: true
+  tasks:
+    - name: Backup existing sources.list
+      ansible.builtin.copy:
+        src: /etc/apt/sources.list
+        dest: /etc/apt/sources.list.backup
+        remote_src: true
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Copy Tsinghua sources.list to remote hosts
+      ansible.builtin.copy:
+        src: sources.list
+        dest: /etc/apt/sources.list
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Update APT cache
+      ansible.builtin.apt:
+        update_cache: yes
+    - name: Install aptitude
+      apt:
+        name: aptitude
+        state: latest
+        update_cache: true
+
+    - name: Disable password authentication for root
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        state: present
+        regexp: '^#?PermitRootLogin'
+        line: 'PermitRootLogin prohibit-password'
+
+    - name: Update apt and install required system packages
+      apt:
+        pkg:
+          - curl
+          - vim
+          - git
+          - ufw
+          - docker.io
+        state: latest
+        update_cache: true
+
+- name: Install Oh My Zsh and plugins
+  hosts: all
+  become: true
+  tasks:
+    - name: Install Zsh
+      apt:
+        name: zsh
+        state: present
+      become: true
+
+    - name: Set Zsh as the default shell
+      user:
+        name: "{{ ansible_user_id }}"
+        shell: /bin/zsh
+      become: false
+
+    - name: Check if Oh My Zsh is already installed
+      stat:
+        path: "~{{ ansible_user_id }}/.oh-my-zsh"
+      register: oh_my_zsh
+      become_user: "{{ ansible_user_id }}"
+      become: false
+
+    - name: Install Oh My Zsh
+      block:
+        - name: Download Oh My Zsh install script
+          ansible.builtin.get_url:
+            url: https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh
+            dest: /tmp/install_oh_my_zsh.sh
+            mode: '0755'
+          become: false
+
+        - name: Ensure Oh My Zsh install script is executable
+          ansible.builtin.file:
+            path: /tmp/install_oh_my_zsh.sh
+            mode: '0755'
+          become: false
+
+        - name: Run Oh My Zsh install script
+          shell: sh /tmp/install_oh_my_zsh.sh --unattended
+          become_user: "{{ ansible_user_id }}"
+          become: false
+          environment:
+            RUNZSH: 'no'
+            KEEP_ZSHRC: 'yes'
+      when: not oh_my_zsh.stat.exists
+
+    - name: Clone zsh-autosuggestions
+      git:
+        repo: https://github.com/zsh-users/zsh-autosuggestions.git
+        dest: "~{{ ansible_user_id }}/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
+        version: master
+      become_user: "{{ ansible_user_id }}"
+      become: false
+
+    - name: Clone zsh-syntax-highlighting
+      git:
+        repo: https://github.com/zsh-users/zsh-syntax-highlighting.git
+        dest: "~{{ ansible_user_id }}/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
+        version: master
+      become_user: "{{ ansible_user_id }}"
+      become: false
+
+    - name: Update .zshrc to include kubectl and helm plugins
+      lineinfile:
+        path: "~{{ ansible_user_id }}/.zshrc"
+        regexp: '^(plugins=\()(.*)\)'
+        line: "plugins=(zsh-autosuggestions zsh-syntax-highlighting kubectl helm git)"
+        backrefs: yes
+      become_user: "{{ ansible_user_id }}"
+      become: false
+
+
+- name: Increase vm.max_map_count for OpenSearch
+  hosts: all
+  become: true
+  tasks:
+    - name: Set vm.max_map_count
+      sysctl:
+        name: vm.max_map_count
+        value: '262144'
+        state: present
+        reload: yes
+      become: true
+
+    - name: Ensure vm.max_map_count is persisted
+      lineinfile:
+        path: /etc/sysctl.conf
+        line: "vm.max_map_count=262144"
+        create: yes
+      become: true

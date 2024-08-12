@@ -1,0 +1,42 @@
+---
+- name: Mount NFS Share
+  hosts: all
+  become: true
+  vars:
+    nfs_server: '192.168.2.200'  # NFS服务器地址
+    nfs_share: '/data'   # NFS共享路径
+    mount_point: '/data'         # 本地挂载点
+    nfs_full_path: "{{ nfs_server }}:{{ nfs_share }}"  # 完整的NFS路径
+
+  tasks:
+    - name: Check current NFS mount on the mount point
+      ansible.builtin.command: "findmnt -n --raw --output=SOURCE {{ mount_point }}"
+      register: current_mount
+      ignore_errors: true
+
+    - name: Umount the mount point if it is different
+      ansible.builtin.command: "umount {{ mount_point }}"
+      when:
+        - current_mount.rc == 0
+        - current_mount.stdout != nfs_full_path
+
+    - name: Install nfs-common
+      ansible.builtin.apt:
+        name: nfs-common
+        state: present
+      when: ansible_os_family == 'Debian'
+
+    - name: Create mount directory
+      ansible.builtin.file:
+        path: "{{ mount_point }}"
+        state: directory
+        mode: '0755'
+
+    - name: Add NFS mount to fstab and mount
+      ansible.builtin.mount:
+        path: "{{ mount_point }}"
+        src: "{{ nfs_full_path }}"
+        fstype: nfs
+        opts: defaults
+        state: mounted
+      when: current_mount.stdout != nfs_full_path
