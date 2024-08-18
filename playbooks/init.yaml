@@ -118,23 +118,3 @@
         backrefs: yes
       become_user: "{{ ansible_user_id }}"
       become: false
-
-
-- name: Increase vm.max_map_count for OpenSearch
-  hosts: all
-  become: true
-  tasks:
-    - name: Set vm.max_map_count
-      sysctl:
-        name: vm.max_map_count
-        value: '262144'
-        state: present
-        reload: yes
-      become: true
-
-    - name: Ensure vm.max_map_count is persisted
-      lineinfile:
-        path: /etc/sysctl.conf
-        line: "vm.max_map_count=262144"
-        create: yes
-      become: true
