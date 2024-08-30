@@ -1,47 +1,67 @@
 ---
-- name: Install and configure NTP on Ubuntu 24.04
+- name: Install and configure Chrony for time synchronization
   hosts: all
-  become: true
-
+  become: yes
   tasks:
-    - name: Update apt cache
+
+    - name: Install chrony
       apt:
+        name: chrony
+        state: present
         update_cache: yes
 
-    - name: Ensure systemd-timesyncd is not present (to avoid conflicts)
-      apt:
-        name: systemd-timesyncd
-        state: absent
-
-    - name: Install NTP package
-      apt:
-        name: ntp
-        state: present
-
-    - name: Ensure NTP service is enabled and running
-      systemd:
-        name: ntp
-        enabled: true
-        state: started
-
-    - name: Configure NTP server (optional)
+    - name: Backup existing chrony.conf if it exists
       copy:
-        dest: /etc/ntp.conf
+        src: /etc/chrony/chrony.conf
+        dest: /etc/chrony/chrony.conf.bak
+        remote_src: yes
+      ignore_errors: yes
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Replace chrony.conf with new configuration
+      copy:
         content: |
-          # Use public servers from the pool.ntp.org project.
-          # Please consider joining the pool (http://www.pool.ntp.org/join.html).
-          pool ntp.ubuntu.com iburst
-          restrict -4 default kod notrap nomodify nopeer noquery limited
-          restrict -6 default kod notrap nomodify nopeer noquery limited
-          restrict 127.0.0.1
-          restrict ::1
+          # Use servers from the NTP Pool Project
+          server cn.pool.ntp.org iburst
+          server time1.aliyun.com iburst
+          server time2.aliyun.com iburst
+          server time3.aliyun.com iburst
+
+          # Allow NTP client access from local network
+          allow 192.168.0.0/16
+
+          # Ignore stratum in source selection.
+          stratumweight 0
+
+          # Record the rate at which the system clock gains/losses time.
+          driftfile /var/lib/chrony/chrony.drift
+
+          # Specify directory for log files.
+          logdir /var/log/chrony
+
+          # Select which statistics are logged.
+          log measurements statistics tracking
+
+        dest: /etc/chrony/chrony.conf
         owner: root
         group: root
-        mode: '0644'
-      notify: Restart NTP service
+        mode: 0644
+      when: ansible_facts['os_family'] == "Debian"
 
-  handlers:
-    - name: Restart NTP service
+    - name: Restart chrony to apply changes
       systemd:
-        name: ntp
+        name: chrony
         state: restarted
+        enabled: yes
+
+    - name: Force time synchronization
+      command: chronyc makestep
+      ignore_errors: yes
+
+    - name: Verify chrony is synchronized
+      command: chronyc tracking
+      register: tracking_output
+
+    - name: Print synchronization status
+      debug:
+        var: tracking_output.stdout_lines
